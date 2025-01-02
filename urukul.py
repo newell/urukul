@@ -2,7 +2,7 @@ from migen import *
 
 
 # increment this if the behavior (LEDs, registers, EEM pins) changes
-__proto_rev__ = 8
+__proto_rev__ = 9
 
 
 class SR(Module):
@@ -24,6 +24,7 @@ class SR(Module):
     * following at least one rising clock edge, on the deassertion of SEL,
       the shift register is loaded into the parallel data register DI
     """
+
     def __init__(self, width):
         self.sdi = Signal()
         self.sdo = Signal()
@@ -47,7 +48,6 @@ class SR(Module):
         self.sync.sck0 += [
                 If(self.sel,
                     self.sdo.eq(sr[-1]),
-
                 )
         ]
         self.sync.sck1 += [
@@ -75,16 +75,18 @@ class CFG(Module):
 
     | Name      | Width | Function                                        |
     |-----------+-------+-------------------------------------------------|
-    | RF_SW     | 4     | Activates RF switch per channel                 |
-    | LED       | 4     | Activates the red LED per channel               |
-    | PROFILE   | 3     | Controls DDS[0:3].PROFILE[0:2]                  |
-    | DUMMY     | 1     | Reserved (used in a previous revision)          |
-    | IO_UPDATE | 1     | Asserts DDS[0:3].IO_UPDATE where CFG.MASK_NU    |
-    |           |       | is high                                         |
+    | RF_SW     | 4     | Activates RF switch (per channel)               |
+    | LED       | 4     | Activates the red LED (per channel)             |
+    | PROFILE   | 4 * 3 | Controls DDS.PROFILE[0:2] (per channel)         |
+    | OSK       | 4     | Asserts DDS.OSK (per channel)                   |
+    | DRCTL     | 4     | Asserts DDS.DRCTL (per channel)                 |
+    | DRHOLD    | 4     | Asserts DDS.DRHOLD (per channel)                |
+    | IO_UPDATE | 4     | Asserts DDS.IO_UPDATE (per channel), where      |
+    |           |       | CFG.MASK_NU is high                             |
     | MASK_NU   | 4     | Disables DDS from QSPI interface, disables      |
     |           |       | IO_UPDATE control through IO_UPDATE EEM signal, |
     |           |       | enables access through CS=3, enables control of |
-    |           |       | IO_UPDATE through CFG.IO_UPDATE                 |
+    |           |       | IO_UPDATE through CFG.IO_UPDATE[0:3]            |
     | CLK_SEL0  | 1     | Selects CLK source: 0 MMCX/OSC, 1 SMA           |
     | SYNC_SEL  | 1     | Selects SYNC source                             |
     | RST       | 1     | Asserts DDS[0:3].RESET, DDS[0:3].MASTER_RESET,  |
@@ -94,27 +96,31 @@ class CFG(Module):
     | DIV       | 2     | Clock divider configuration: 0: default,        |
     |           |       | 1: divide-by-one, 2: divider-by-two,            |
     |           |       | 3: divide-by-four                               |
+    | ATT_EN    | 4     | Enable ATT (per channel)                        |
+    | DUMMY     | 1     | Unused, not usable, undefined                   |
     """
+
     def __init__(self, platform, n=4):
-        self.data = Record([
-            ("rf_sw", n),
-            ("led", n),
-
-            ("profile", 3),
-
-            ("dummy", 1),
-            ("io_update", 1),
-
-            ("mask_nu", 4),
-
-            ("clk_sel0", 1),
-            ("sync_sel", 1),
-
-            ("rst", 1),
-            ("io_rst", 1),
-            ("clk_sel1", 1),
-            ("div", 2),
-        ])
+        self.data = Record(
+            [
+                ("rf_sw", n),
+                ("led", n),
+                ("profile", 3 * n),
+                ("osk", n),
+                ("drctl", n),
+                ("drhold", n),
+                ("io_update", n),
+                ("mask_nu", 4),
+                ("clk_sel0", 1),
+                ("sync_sel", 1),
+                ("rst", 1),
+                ("io_rst", 1),
+                ("clk_sel1", 1),
+                ("div", 2),
+                ("att_en", n),
+                ("dummy", 1),
+            ]
+        )
         dds_common = platform.lookup_request("dds_common")
         dds_sync = platform.lookup_request("dds_sync")
         att = platform.lookup_request("att")
@@ -140,10 +146,10 @@ class CFG(Module):
                     dds.led[0].eq(dds.rf_sw),  # green
                     dds.led[1].eq(self.data.led[i] | (self.en_9910 & (
                         dds.smp_err | ~dds.pll_lock))),  # red
-                    dds.profile.eq(self.data.profile),
-                    dds.osk.eq(1),
-                    dds.drhold.eq(0),
-                    dds.drctl.eq(0),
+                    dds.profile.eq(self.data.profile[3 * i : 3 * i + 3]),
+                    dds.osk.eq(self.data.osk[i]),
+                    dds.drhold.eq(self.data.drhold[i]),
+                    dds.drctl.eq(self.data.drctl[i]),
             ]
 
 
@@ -158,21 +164,26 @@ class Status(Module):
     |-----------+-------+-------------------------------------------|
     | RF_SW     | 4     | Actual RF switch and green LED activation |
     |           |       | (including that by EEM1.SW[0:3])          |
-    | SMP_ERR   | 4     | DDS[0:3].SMP_ERR                          |
-    | PLL_LOCK  | 4     | DDS[0:3].PLL_LOCK                         |
+    | SMP_ERR   | 4     | DDS.SMP_ERR per channel                   |
+    | PLL_LOCK  | 4     | DDS.PLL_LOCK per channel                  |
     | IFC_MODE  | 4     | IFC_MODE[0:3]                             |
     | PROTO_REV | 7     | Protocol revision (see __proto_rev__)     |
-    | DUMMY     | 1     | Not used, not usable, undefined           |
+    | DROVER    | 4     | DDS.DROVER per channel                    |
+    | DUMMY     | 21    | Not used, not usable, undefined           |
     """
+
     def __init__(self, platform, n=4):
-        self.data = Record([
-            ("rf_sw", n),
-            ("smp_err", n),
-            ("pll_lock", n),
-            ("ifc_mode", 4),
-            ("proto_rev", 7),
-            ("dummy", 1)
-        ])
+        self.data = Record(
+            [
+                ("rf_sw", n),
+                ("smp_err", n),
+                ("pll_lock", n),
+                ("ifc_mode", 4),
+                ("proto_rev", 7),
+                ("drover", n),
+                ("dummy", 25),
+            ]
+        )
         self.comb += [
                 self.data.ifc_mode.eq(platform.lookup_request("ifc_mode")),
                 self.data.proto_rev.eq(__proto_rev__),
@@ -184,6 +195,7 @@ class Status(Module):
                     self.data.rf_sw[i].eq(dds.rf_sw),
                     self.data.smp_err[i].eq(dds.smp_err),
                     self.data.pll_lock[i].eq(dds.pll_lock),
+                    self.data.drover[i].eq(dds.drover),
             ]
 
 
@@ -389,6 +401,7 @@ class Urukul(Module):
     The test points expose miscellaneous signals for debugging and are not part
     of the protocol revision.
     """
+
     def __init__(self, platform):
         clk = platform.request("clk")
         dds_sync = platform.request("dds_sync")
@@ -445,7 +458,7 @@ class Urukul(Module):
 
         cfg = CFG(platform)
         stat = Status(platform)
-        sr = SR(24)
+        sr = SR(52)
         assert len(cfg.data) <= len(sr.di)
         assert len(stat.data) <= len(sr.do)
         self.submodules += cfg, stat, sr
@@ -456,8 +469,8 @@ class Urukul(Module):
         mosi = eem[1].i
 
         self.specials += [Instance("FDPE", p_INIT=1,
-                i_D=0, i_C=ClockSignal("sck1"), i_CE=sel[2], i_PRE=~sel[2],
-                o_Q=att.le[i]) for i in range(4)]
+                i_D=0, i_C=ClockSignal("sck1"), i_CE=sel[2],
+                i_PRE=~(sel[2] & cfg.data.att_en[i]), o_Q=att.le[i]) for i in range(4)]
 
         self.comb += [
                 cfg.en_9910.eq(en_9910),
