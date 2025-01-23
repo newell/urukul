@@ -97,7 +97,6 @@ class CFG(Module):
     |           |       | 1: divide-by-one, 2: divider-by-two,            |
     |           |       | 3: divide-by-four                               |
     | ATT_EN    | 4     | Enable ATT (per channel)                        |
-    | DUMMY     | 1     | Unused, not usable, undefined                   |
     """
 
     def __init__(self, platform, n=4):
@@ -118,7 +117,6 @@ class CFG(Module):
                 ("clk_sel1", 1),
                 ("div", 2),
                 ("att_en", n),
-                ("dummy", 1),
             ]
         )
         dds_common = platform.lookup_request("dds_common")
@@ -169,7 +167,6 @@ class Status(Module):
     | IFC_MODE  | 4     | IFC_MODE[0:3]                             |
     | PROTO_REV | 7     | Protocol revision (see __proto_rev__)     |
     | DROVER    | 4     | DDS.DROVER per channel                    |
-    | DUMMY     | 21    | Not used, not usable, undefined           |
     """
 
     def __init__(self, platform, n=4):
@@ -181,7 +178,6 @@ class Status(Module):
                 ("ifc_mode", 4),
                 ("proto_rev", 7),
                 ("drover", n),
-                ("dummy", 25),
             ]
         )
         self.comb += [
