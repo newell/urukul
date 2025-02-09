@@ -502,7 +502,7 @@ class Urukul(Module):
                     ddsi.sdi.eq(Mux(sel_nu, eem[i + 8].i, mosi)),
                     miso[i + 4].eq(ddsi.sdo),
                     ddsi.io_update.eq(Mux(cfg.data.mask_nu[i],
-                        cfg.data.io_update, eem[6].i)),
+                        cfg.data.io_update[i], eem[6].i)),
                     ddsi.reset.eq(cfg.data.rst | (~en_9910 & eem[7].i)),
             ]
 
